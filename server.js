@@ -1,27 +1,68 @@
 'use strict';
-
-const express = require('express');
-const bodyParser = require('body-parser');
-const cors = require('cors');
 require('dotenv').config();
+const express     = require('express');
+const bodyParser  = require('body-parser');
+const cors        = require('cors');
+const helmet      = require('helmet');   // 👈 Importamos helmet
+
+const apiRoutes         = require('./routes/api.js');
+const fccTestingRoutes  = require('./routes/fcctesting.js');
+const runner            = require('./test-runner');
 
 const app = express();
 
-// Trust proxy para IPs en Replit/Heroku/Render
-app.set('trust proxy', true);
+app.use('/public', express.static(process.cwd() + '/public'));
 
-// Middlewares
-app.use(cors());
+app.use(cors({origin: '*'})); //For FCC testing purposes only
+
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
-// Rutas de la API
-require('./routes/api.js')(app);
+// ✅ Seguridad: configurar Content Security Policy (scripts y estilos solo desde el mismo servidor)
+app.use(
+  helmet.contentSecurityPolicy({
+    useDefaults: true,
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'"],
+    },
+  })
+);
 
-// Inicio de servidor
-const PORT = 5000;
-app.listen(PORT, function () {
-  console.log(`🚀 Servidor escuchando en puerto ${PORT}`);
+//Index page (static HTML)
+app.route('/')
+  .get(function (req, res) {
+    res.sendFile(process.cwd() + '/views/index.html');
+  });
+
+//For FCC testing purposes
+fccTestingRoutes(app);
+
+//Routing for API 
+apiRoutes(app);  
+
+//404 Not Found Middleware
+app.use(function(req, res, next) {
+  res.status(404)
+    .type('text')
+    .send('Not Found');
 });
 
-module.exports = app; // exportar para pruebas
+//Start our server and tests!
+const listener = app.listen(process.env.PORT || 5000, '0.0.0.0', function () {
+  console.log('Your app is listening on port ' + listener.address().port);
+  if(process.env.NODE_ENV==='test') {
+    console.log('Running Tests...');
+    setTimeout(function () {
+      try {
+        runner.run();
+      } catch(e) {
+        console.log('Tests are not valid:');
+        console.error(e);
+      }
+    }, 3500);
+  }
+});
+
+module.exports = app; //for testing
